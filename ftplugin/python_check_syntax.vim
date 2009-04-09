@@ -1,7 +1,7 @@
 " vim: ts=4 shiftwidth=4 expandtab fdm=marker
 " author: tocer tocer.deng@gmail.com
-" version: 0.6
-" lastchange: 2008-12-15
+" version: 0.6.2
+" lastchange: 2008-12-17
 
 
 if !has('python')
@@ -25,7 +25,10 @@ else:
 cmd_check = 'noremap <buffer> %s :py pysyntaxchecker.check()<CR>' % key_check
 vim.command(cmd_check)
 if check_when_saving:
-    cmd = 'autocmd BufWritePost *.py py pysyntaxchecker.check()'
+    filename = """vim.eval("expand('<afile>:p')")"""
+    cmd = 'autocmd BufWritePost *.py py pysyntaxchecker.check(%s)' % filename
+    vim.command(cmd)
+    cmd = 'autocmd BufLeave *.py py quickfix.close()'
     vim.command(cmd)
 
 eof
@@ -40,50 +43,11 @@ let g:loaded_pysyntaxchecker=1
 python << end
 
 import vim
+import compiler
 try:
     from pyflakes.checker import Checker
 except:  # pyflakes version <= 0.2.1
     from pyflakes import Checker
-
-def vimeval(expr):
-    vim.command('let g:pcs_variant = eval("%s")' % expr)
-    isint = bool(int(vim.eval('type(pcs_variant) == type(0)')))
-    isfunc = bool(int(vim.eval('type(pcs_variant) == type(function("tr"))')))
-    isfloat = bool(int(vim.eval('type(pcs_variant) == type(0.0)')))
-    value = vim.eval('pcs_variant')
-    if isint:
-        value = int(value)
-    elif isfloat:
-        value = float(value)
-    elif  isfunc:
-        raise VimError, 'Not supported date type'
-    else: # cound treat correctly
-        pass
-    return value
-
-class VimOption(object):
-    setcmd = 'set'
-
-    def __getattr__(self, name):
-        _value = vim.eval('&%s' % name)
-        if isinstance(_value, int):
-            try:
-                vim.eval('&no%s' % name)
-                value = bool(_value)
-            except VimError:
-                value = int(_value)
-        else:
-            value = str(_value)
-        return value
-
-    def __setattr__(self, name, value):
-        if isinstance(value, bool):  # is boolean
-            opt = name if value else 'no%s' % name
-        else:  # is number or string
-            opt = '%s=%s' % (name, value)
-        return vim.command('%s %s' % (self.setcmd, opt))
-
-vimopt = VimOption()
 
 class VimFunction(object):
     def __getattr__(self, name):
@@ -119,7 +83,7 @@ class VimQuickFix(object):
         if msgs:
             keys = ['filename', 'lnum', 'text', 'type']
             # errors = [dict(zip(keys, msg)) for msg in msgs if None not in msg] 
-            errors = [dict(zip(keys, msg)) for msg in msgs] 
+            errors = [dict(zip(keys, msg)) for msg in msgs]
             vimfunc.setqflist(errors, 'r')
             self.open()
         else:
@@ -128,12 +92,11 @@ class VimQuickFix(object):
 quickfix = VimQuickFix()
 
 class PySyntaxChecker(object):
-    def check(self):
-        source = '\n'.join(vim.current.buffer[:])
-        filename = vimfunc.expand(r"%:p")
-        self._check(source, filename)
-
-    def _check(self, source, filename):
+    def check(self, filename=None):
+        if not filename:
+            filename = vim.eval("expand('%:p')")
+        source = open(filename, 'r').read()
+        print >> open('/tmp/vim.log', 'a'), filename, source
         msgs = []
         try:
             tree = compiler.parse(source)
